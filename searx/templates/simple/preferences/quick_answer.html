@@ -1,0 +1,150 @@
+{%- set qa_cfg = get_setting('quick_answer') or {} -%}
+{%- if qa_cfg.get('active', true) and (not qa_cfg.get('hide_from_normal_users', false) or preferences.is_quick_answer_admin()) -%}
+
+<div class="pref-group">{{- _('Quick Answer (Respostas com IA)') -}}</div>
+
+<fieldset>
+  <legend id="pref_quick_answer_enable">{{- _('Ativar Quick Answer') -}}</legend>
+  <p class="value">
+    <input type="checkbox"
+           name="quick_answer_enable"
+           aria-labelledby="pref_quick_answer_enable"
+           class="checkbox-onoff"
+           {%- if preferences.get_value('quick_answer_enable') -%}
+             checked
+           {%- endif -%}>
+  </p>
+  <div class="description">
+    {{- _("Gera sínteses diretas por IA baseadas nos resultados ao terminar a pesquisa com '?' (ex: 'O que é Proxmox?')") -}}
+  </div>
+</fieldset>
+
+{%- if preferences.is_quick_answer_admin() -%}
+<div class="pref-group" style="margin-top: 1.5rem; font-size: 0.9em; opacity: 0.9;">
+  <span style="background: var(--color-quick-answer-badge-bg, #3b82f6); color: #fff; padding: 2px 6px; border-radius: 4px; font-weight: bold; font-size: 0.8em; margin-right: 6px;">ADMIN</span>
+  {{- _('Configuração de Provedores de IA') -}}
+</div>
+
+<fieldset>
+  <legend id="pref_quick_answer_provider">{{- _('Provedor de IA ativo') -}}</legend>
+  <div class="value">
+    <select name="quick_answer_provider" id="quick_answer_provider_select" aria-labelledby="pref_quick_answer_provider">
+      {%- set current_provider = preferences.get_value('quick_answer_provider') or qa_cfg.get('default_provider', 'omniroute_local') -%}
+      {%- for pid, pdata in qa_cfg.get('providers', {}).items() -%}
+        <option value="{{ pid }}" {%- if pid == current_provider %} selected{% endif -%}>
+          {{ pdata.get('name', pid) }} ({{ pdata.get('endpoint') }})
+        </option>
+      {%- endfor -%}
+    </select>
+  </div>
+  <div class="description">
+    {{- _('Selecione o provedor de IA utilizado pelo SearXNG para gerar as respostas.') -}}
+  </div>
+</fieldset>
+
+<fieldset>
+  <legend id="pref_quick_answer_model">{{- _('Modelo de IA') -}}</legend>
+  <div class="value">
+    <input name="quick_answer_model" aria-labelledby="pref_quick_answer_model" type="text"
+           list="qa_model_suggestions"
+           autocomplete="off" spellcheck="false" autocorrect="off"
+           placeholder="{{ qa_cfg.get('default_model', 'auto/best-chat') }}"
+           value='{{ preferences.get_value("quick_answer_model") }}'>
+    <datalist id="qa_model_suggestions">
+      <option value="auto/best-chat">auto/best-chat (Recomendado)</option>
+      <option value="auto/fast">auto/fast (Ultra-rápido)</option>
+      <option value="auto/best-coding">auto/best-coding</option>
+      <option value="demigod-flash">demigod-flash</option>
+      <option value="deepseek-chat">deepseek-chat</option>
+      <option value="meta-llama/llama-3.3-70b-instruct">meta-llama/llama-3.3-70b-instruct</option>
+    </datalist>
+  </div>
+  <div class="description">
+    {{- _('Modelo específico para o provedor selecionado (deixe vazio para usar o padrão do provedor).') -}}
+  </div>
+</fieldset>
+
+<fieldset>
+  <legend id="pref_quick_answer_test">{{- _('Teste de Conectividade') -}}</legend>
+  <div class="value">
+    <button type="button" class="button" id="qa_btn_test_connection" style="cursor: pointer;">
+      {{- _('Testar Conexão com Provedor') -}}
+    </button>
+    <span id="qa_test_result" style="margin-left: 10px; font-size: 0.9em; font-weight: 500;"></span>
+  </div>
+  <div class="description">
+    {{- _('Verifica se o SearXNG consegue se comunicar e autenticar com o provedor selecionado.') -}}
+  </div>
+</fieldset>
+
+<fieldset>
+  <legend id="pref_quick_answer_admin_token">{{- _('Token de Administrador') -}}</legend>
+  <div class="value">
+    <input name="quick_answer_admin_token" aria-labelledby="pref_quick_answer_admin_token" type="password"
+           autocomplete="off" spellcheck="false" autocorrect="off"
+           placeholder="Token de admin"
+           value='{{ preferences.get_value("quick_answer_admin_token") }}'>
+  </div>
+  <div class="description">
+    {{- _('Token secreto configurado no settings.yml (admin_token) para proteger esta área.') -}}
+  </div>
+</fieldset>
+
+<script>
+  document.getElementById('qa_btn_test_connection')?.addEventListener('click', async function() {
+    const statusEl = document.getElementById('qa_test_result');
+    const sel = document.getElementById('quick_answer_provider_select');
+    const providerId = sel ? sel.value : 'omniroute_local';
+    const modelInput = document.querySelector('input[name="quick_answer_model"]');
+    const model = modelInput ? modelInput.value : '';
+
+    if (statusEl) {
+      statusEl.textContent = 'Testando...';
+      statusEl.style.color = '#3b82f6';
+    }
+
+    try {
+      const resp = await fetch('/quick_answer/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider_id: providerId, model: model })
+      });
+      const data = await resp.json();
+      if (statusEl) {
+        if (resp.ok) {
+          statusEl.textContent = '✓ ' + (data.message || 'OK');
+          statusEl.style.color = '#10b981';
+        } else {
+          statusEl.textContent = '✗ ' + (data.message || data.error || 'Erro');
+          statusEl.style.color = '#ef4444';
+        }
+      }
+    } catch (err) {
+      if (statusEl) {
+        statusEl.textContent = '✗ Falha de rede: ' + err.message;
+        statusEl.style.color = '#ef4444';
+      }
+    }
+  });
+</script>
+
+{%- else -%}
+
+{# Admin unlock for users when admin_token is set on server #}
+{%- if qa_cfg.get('admin_token') -%}
+<fieldset style="opacity: 0.7; font-size: 0.9em; margin-top: 1rem;">
+  <legend id="pref_qa_admin_unlock">{{- _('Acesso de Administrador') -}}</legend>
+  <div class="value">
+    <input name="quick_answer_admin_token" aria-labelledby="pref_qa_admin_unlock" type="password"
+           autocomplete="off" spellcheck="false" autocorrect="off"
+           placeholder="Insira o token de admin para gerenciar provedores">
+  </div>
+  <div class="description">
+    {{- _('Insira o token de administrador e clique em Salvar para desbloquear a gestão de provedores de IA.') -}}
+  </div>
+</fieldset>
+{%- endif -%}
+
+{%- endif -%}
+
+{%- endif -%}
