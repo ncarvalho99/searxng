@@ -34,6 +34,13 @@ ready(() => {
       where: [Endpoints.results]
     });
   }
+
+  if (settings.plugins?.includes("quick_answer") || settings.plugins?.includes("quickAnswer")) {
+    load(() => import("./plugin/QuickAnswer.ts").then(({ default: Plugin }) => new Plugin()), {
+      on: "endpoint",
+      where: [Endpoints.results]
+    });
+  }
 });
 
 ready(

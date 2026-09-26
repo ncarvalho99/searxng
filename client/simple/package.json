@@ -24,6 +24,8 @@
   ],
   "dependencies": {
     "ionicons": "^8.1.0",
+    "katex": "^0.18.9",
+    "marked": "^18.0.14",
     "normalize.css": "8.0.1",
     "ol": "^10.10.0",
     "swiped-events": "1.2.0"
