@@ -1510,11 +1510,14 @@ def quick_answer_test():
                 "messages": [{"role": "user", "content": "Ping"}],
                 "max_tokens": 5,
             },
-            timeout=15,
+            timeout=40,
         )
-        if resp.status_code == 200:
-            return jsonify({"status": "ok", "message": "Conexão bem-sucedida!"})
-        return jsonify({"status": "error", "message": f"Status {resp.status_code}: {resp.text[:200]}"}), 400
+        try:
+            if resp.status_code == 200:
+                return jsonify({"status": "ok", "message": "Conexão bem-sucedida!"})
+            return jsonify({"status": "error", "message": f"Status {resp.status_code}: {resp.text[:200]}"}), 400
+        finally:
+            resp.close()
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
