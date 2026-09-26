@@ -1393,42 +1393,43 @@ def quick_answer():
 
     def stream_response():
         content_buffer = []
+        resp = None
         try:
             from curl_cffi import requests
-            with requests.post(
+            resp = requests.post(
                 endpoint,
                 headers=headers,
                 json=payload,
                 stream=True,
                 timeout=60,
-            ) as resp:
-                if resp.status_code != 200:
-                    err_msg = f"Erro no provedor de IA ({resp.status_code}): {resp.text[:300]}"
-                    yield err_msg
-                    return
+            )
+            if resp.status_code != 200:
+                err_msg = f"Erro no provedor de IA ({resp.status_code}): {resp.text[:300]}"
+                yield err_msg
+                return
 
-                for raw_line in resp.iter_lines():
-                    if not raw_line:
-                        continue
-                    line = raw_line.decode("utf-8", errors="replace").strip() if isinstance(raw_line, bytes) else raw_line.strip()
-                    if not line.startswith("data:"):
-                        continue
-                    data_str = line[5:].strip()
-                    if data_str == "[DONE]":
-                        break
-                    try:
-                        chunk_json = json.loads(data_str)
-                        choices = chunk_json.get("choices")
-                        if choices and len(choices) > 0:
-                            delta = choices[0].get("delta", {})
-                            content = delta.get("content", "")
-                            if content:
-                                content_buffer.append(content)
-                                yield content
-                    except json.JSONDecodeError:
-                        continue
-                    except Exception:
-                        continue
+            for raw_line in resp.iter_lines():
+                if not raw_line:
+                    continue
+                line = raw_line.decode("utf-8", errors="replace").strip() if isinstance(raw_line, bytes) else raw_line.strip()
+                if not line.startswith("data:"):
+                    continue
+                data_str = line[5:].strip()
+                if data_str == "[DONE]":
+                    break
+                try:
+                    chunk_json = json.loads(data_str)
+                    choices = chunk_json.get("choices")
+                    if choices and len(choices) > 0:
+                        delta = choices[0].get("delta", {})
+                        content = delta.get("content", "")
+                        if content:
+                            content_buffer.append(content)
+                            yield content
+                except json.JSONDecodeError:
+                    continue
+                except Exception:
+                    continue
 
             full_text = "".join(content_buffer)
             if full_text and not full_text.startswith("Erro"):
@@ -1439,6 +1440,12 @@ def quick_answer():
         except Exception as exc:
             logger.exception("quick_answer streaming error")
             yield f"Erro ao comunicar com o provedor de IA: {str(exc)}"
+        finally:
+            if resp is not None:
+                try:
+                    resp.close()
+                except Exception:
+                    pass
 
     return Response(stream_response(), mimetype="text/html; charset=utf-8")
 
