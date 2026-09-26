@@ -8,7 +8,7 @@ import typing as t
 from datetime import datetime
 
 from flask_babel import gettext
-from searx._settings import get_setting
+from searx import get_setting
 from searx.plugins import Plugin, PluginInfo
 
 if t.TYPE_CHECKING:
