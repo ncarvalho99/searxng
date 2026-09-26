@@ -487,6 +487,26 @@ class Preferences:
                 get_setting("ui.url_formatting"),
                 choices=["pretty", "full", "host"],
             ),
+            'quick_answer_enable': BooleanSetting(
+                get_setting("quick_answer.active", True),
+                locked="quick_answer_enable" in self.cfg.lock,
+            ),
+            'quick_answer_provider': StringSetting(
+                get_setting("quick_answer.default_provider", "omniroute_local"),
+                locked="quick_answer_provider" in self.cfg.lock,
+            ),
+            'quick_answer_model': StringSetting(
+                get_setting("quick_answer.default_model", ""),
+                locked="quick_answer_model" in self.cfg.lock,
+            ),
+            'quick_answer_admin_token': StringSetting(
+                "",
+                locked="quick_answer_admin_token" in self.cfg.lock,
+            ),
+            'quick_answer_custom_providers': StringSetting(
+                "",
+                locked="quick_answer_custom_providers" in self.cfg.lock,
+            ),
         }
 
         self.engines = EnginesSetting('engines', engines=engines.values())
@@ -595,3 +615,13 @@ class Preferences:
                     break
 
         return valid
+
+    def is_quick_answer_admin(self) -> bool:
+        """Returns True if the current user has administrative rights over Quick Answer settings."""
+        qa_cfg = get_setting("quick_answer") or {}
+        admin_token = qa_cfg.get("admin_token") or os.environ.get("SEARXNG_QUICK_ANSWER_ADMIN_TOKEN")
+        if not admin_token:
+            return True
+        user_token = self.get_value("quick_answer_admin_token")
+        return bool(user_token and user_token.strip() == str(admin_token).strip())
+

@@ -249,6 +249,9 @@ plugins:
   searx.plugins.tracker_url_remover.SXNGPlugin:
     active: true
 
+  searx.plugins.quick_answer.SXNGPlugin:
+    active: true
+
 
 # Configuration of the "Hostnames plugin":
 #
@@ -3502,3 +3505,32 @@ doi_resolvers:
   sci-hub.ru: 'https://sci-hub.ru/'
 
 default_doi_resolver: 'oadoi.org'
+
+# Quick Answer (Search-augmented LLM summaries)
+# Supports multi-provider AI (OmniRoute Local, OmniRoute Externo, OpenRouter, and custom OpenAI-compatible endpoints)
+quick_answer:
+  active: true
+  admin_token: ""  # When set, managing providers and keys requires this token
+  hide_from_normal_users: false  # If true, normal users do not see the Quick Answer preferences group
+  default_provider: "omniroute_local"
+  default_model: "auto/best-chat"
+  providers:
+    omniroute_local:
+      name: "OmniRoute (Local)"
+      endpoint: "http://172.26.128.27:20128/v1/chat/completions"
+      api_key: ""
+      default_model: "auto/best-chat"
+      description: "Gateway OmniRoute interno no homelab (CT 128)"
+    omniroute_external:
+      name: "OmniRoute (Externo)"
+      endpoint: "https://omniroute.nclabs.dev/v1/chat/completions"
+      api_key: ""
+      default_model: "auto/best-chat"
+      description: "Gateway OmniRoute externo (https://omniroute.nclabs.dev)"
+    openrouter:
+      name: "OpenRouter"
+      endpoint: "https://openrouter.ai/api/v1/chat/completions"
+      api_key: ""
+      default_model: "meta-llama/llama-3.3-70b-instruct"
+      description: "OpenRouter AI Cloud API"
+
