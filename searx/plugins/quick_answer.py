@@ -17,6 +17,13 @@ if t.TYPE_CHECKING:
     from searx.search import SearchWithPlugins
 
 
+def _get_res_field(item: t.Any, field: str, default: str = "") -> str:
+    """Helper to safely retrieve attributes from MainResult or dict."""
+    if isinstance(item, dict):
+        return str(item.get(field, default) or default)
+    return str(getattr(item, field, default) or default)
+
+
 class SXNGPlugin(Plugin):
     id = "quick_answer"
     default_on = True
@@ -61,14 +68,17 @@ CITATION GUIDELINES:
 8. Be concise, objective, and synthesize the information in your own words.
 """
 
-    def format_sources(self, sources: list[dict[str, t.Any]]) -> str:
+    def format_sources(self, sources: list[t.Any]) -> str:
         ret = ["<available_information>"]
         for pos, source in enumerate(sources):
+            url = _get_res_field(source, "url")
+            title = _get_res_field(source, "title")
+            content = _get_res_field(source, "content")
             ret.append("<datum>")
             ret.append(f'<citation index="{pos}">')
-            ret.append(f"<source>\n{source.get('url', '')}\n</source>")
-            ret.append(f"<title>\n{source.get('title', '')}\n</title>")
-            ret.append(f"<content>\n{source.get('content', '')}\n</content>")
+            ret.append(f"<source>\n{url}\n</source>")
+            ret.append(f"<title>\n{title}\n</title>")
+            ret.append(f"<content>\n{content}\n</content>")
             ret.append("</citation>")
             ret.append("</datum>")
         ret.append("</available_information>")
@@ -129,7 +139,7 @@ CITATION GUIDELINES:
         system_prompt = self.get_sys_prompt()
 
         reference_map = {
-            str(i): [source.get("url", ""), source.get("title", "")]
+            str(i): [_get_res_field(source, "url"), _get_res_field(source, "title")]
             for i, source in enumerate(sources)
         }
 
