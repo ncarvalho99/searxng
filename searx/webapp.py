@@ -8,6 +8,8 @@ import json
 import os
 import sys
 import base64
+import hashlib
+from datetime import datetime, timedelta
 
 from timeit import default_timer
 from html import escape
@@ -1299,6 +1301,215 @@ def config():
             'public_instance': settings['server']['public_instance'],
         }
     )
+
+
+# User-scoped cache for quick answer responses
+quick_answer_cache: dict[str, dict[str, typing.Any]] = {}
+quick_answer_cache_max_keys = 1000
+quick_answer_cache_expiry = timedelta(minutes=60)
+
+
+@app.route("/quick_answer", methods=["POST"])
+def quick_answer():
+    """Endpoint to handle LLM streaming requests for Quick Answer."""
+    data = sxng_request.get_json(silent=True)
+    if not data:
+        return "Invalid JSON data", 400
+
+    user = data.get("user")
+    system = data.get("system")
+    if not user or not system:
+        return "Missing required user or system prompt", 400
+
+    qa_cfg = get_setting("quick_answer") or {}
+    server_providers = qa_cfg.get("providers", {})
+    default_provider_id = qa_cfg.get("default_provider", "omniroute_local")
+
+    provider_id = data.get("provider") or default_provider_id
+    model = data.get("model")
+
+    # Check custom providers sent by admin
+    custom_providers = data.get("custom_providers") or {}
+    provider_info = None
+
+    if provider_id in server_providers:
+        provider_info = server_providers[provider_id]
+        endpoint = provider_info.get("endpoint")
+        api_key = provider_info.get("api_key") or os.environ.get("OMNIROUTE_API_KEY", "")
+        if not model:
+            model = provider_info.get("default_model") or qa_cfg.get("default_model", "auto/best-chat")
+    elif provider_id in custom_providers:
+        provider_info = custom_providers[provider_id]
+        endpoint = provider_info.get("endpoint")
+        api_key = provider_info.get("api_key", "")
+        if not model:
+            model = provider_info.get("default_model") or qa_cfg.get("default_model", "auto/best-chat")
+    else:
+        # Fallback to default server provider
+        provider_id = default_provider_id
+        provider_info = server_providers.get(provider_id, {})
+        endpoint = provider_info.get("endpoint")
+        api_key = provider_info.get("api_key") or os.environ.get("OMNIROUTE_API_KEY", "")
+        if not model:
+            model = provider_info.get("default_model") or qa_cfg.get("default_model", "auto/best-chat")
+
+    if not endpoint:
+        return "No valid AI provider endpoint configured", 500
+
+    # Prune expired cache keys
+    now = datetime.now()
+    expired_keys = [
+        k for k, v in quick_answer_cache.items()
+        if now - v["timestamp"] >= quick_answer_cache_expiry
+    ]
+    for k in expired_keys:
+        del quick_answer_cache[k]
+
+    if len(quick_answer_cache) >= quick_answer_cache_max_keys:
+        sorted_keys = sorted(quick_answer_cache.keys(), key=lambda k: quick_answer_cache[k]["timestamp"])
+        for k in sorted_keys[: len(quick_answer_cache) - quick_answer_cache_max_keys + 1]:
+            del quick_answer_cache[k]
+
+    query_hash = hashlib.sha256(f"{provider_id}:{model}:{user}:{system}".encode("utf-8")).hexdigest()
+    cached_response = quick_answer_cache.get(query_hash)
+    if cached_response and datetime.now() - cached_response["timestamp"] < quick_answer_cache_expiry:
+        return Response(cached_response["content"], mimetype="text/html; charset=utf-8")
+
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "text/event-stream",
+    }
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+        "stream": True,
+    }
+
+    def stream_response():
+        content_buffer = []
+        try:
+            from curl_cffi import requests
+            with requests.post(
+                endpoint,
+                headers=headers,
+                json=payload,
+                stream=True,
+                timeout=60,
+            ) as resp:
+                if resp.status_code != 200:
+                    err_msg = f"Erro no provedor de IA ({resp.status_code}): {resp.text[:300]}"
+                    yield err_msg
+                    return
+
+                for raw_line in resp.iter_lines():
+                    if not raw_line:
+                        continue
+                    line = raw_line.decode("utf-8", errors="replace").strip() if isinstance(raw_line, bytes) else raw_line.strip()
+                    if not line.startswith("data:"):
+                        continue
+                    data_str = line[5:].strip()
+                    if data_str == "[DONE]":
+                        break
+                    try:
+                        chunk_json = json.loads(data_str)
+                        choices = chunk_json.get("choices")
+                        if choices and len(choices) > 0:
+                            delta = choices[0].get("delta", {})
+                            content = delta.get("content", "")
+                            if content:
+                                content_buffer.append(content)
+                                yield content
+                    except json.JSONDecodeError:
+                        continue
+                    except Exception:
+                        continue
+
+            full_text = "".join(content_buffer)
+            if full_text and not full_text.startswith("Erro"):
+                quick_answer_cache[query_hash] = {
+                    "content": full_text,
+                    "timestamp": datetime.now(),
+                }
+        except Exception as exc:
+            logger.exception("quick_answer streaming error")
+            yield f"Erro ao comunicar com o provedor de IA: {str(exc)}"
+
+    return Response(stream_response(), mimetype="text/html; charset=utf-8")
+
+
+@app.route("/quick_answer/providers", methods=["GET"])
+def quick_answer_providers():
+    """Return public list of configured AI providers (without secrets)."""
+    qa_cfg = get_setting("quick_answer") or {}
+    providers = qa_cfg.get("providers", {})
+    result = []
+    for pid, pdata in providers.items():
+        result.append({
+            "id": pid,
+            "name": pdata.get("name", pid),
+            "endpoint": pdata.get("endpoint", ""),
+            "default_model": pdata.get("default_model", ""),
+            "description": pdata.get("description", ""),
+            "has_key": bool(pdata.get("api_key")),
+        })
+    return jsonify({
+        "default_provider": qa_cfg.get("default_provider", "omniroute_local"),
+        "default_model": qa_cfg.get("default_model", "auto/best-chat"),
+        "providers": result,
+    })
+
+
+@app.route("/quick_answer/test", methods=["POST"])
+def quick_answer_test():
+    """Test connection to an AI provider (admin only)."""
+    if not sxng_request.preferences.is_quick_answer_admin():
+        return jsonify({"error": "Unauthorized"}), 403
+
+    data = sxng_request.get_json(silent=True) or {}
+    endpoint = data.get("endpoint")
+    api_key = data.get("api_key")
+    model = data.get("model") or "auto/best-chat"
+    provider_id = data.get("provider_id")
+
+    qa_cfg = get_setting("quick_answer") or {}
+    server_providers = qa_cfg.get("providers", {})
+
+    if provider_id and provider_id in server_providers:
+        sp = server_providers[provider_id]
+        endpoint = sp.get("endpoint")
+        api_key = api_key or sp.get("api_key") or os.environ.get("OMNIROUTE_API_KEY", "")
+        model = model or sp.get("default_model") or "auto/best-chat"
+
+    if not endpoint:
+        return jsonify({"error": "Endpoint is required"}), 400
+
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+
+    try:
+        from curl_cffi import requests
+        resp = requests.post(
+            endpoint,
+            headers=headers,
+            json={
+                "model": model,
+                "messages": [{"role": "user", "content": "Ping"}],
+                "max_tokens": 5,
+            },
+            timeout=15,
+        )
+        if resp.status_code == 200:
+            return jsonify({"status": "ok", "message": "Conexão bem-sucedida!"})
+        return jsonify({"status": "error", "message": f"Status {resp.status_code}: {resp.text[:200]}"}), 400
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 
 @app.errorhandler(404)
