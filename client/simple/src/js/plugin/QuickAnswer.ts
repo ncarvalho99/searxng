@@ -128,14 +128,22 @@ export default class QuickAnswer extends Plugin {
         if (!refNum) {
           refNum = referenceCounter++;
           referenceIndices[citationIndex] = refNum;
-          const li = document.createElement("li");
-          const a = document.createElement("a");
-          a.href = url;
-          a.textContent = title || url;
-          a.target = "_blank";
-          a.rel = "noopener noreferrer";
-          li.appendChild(a);
-          safeRefList.appendChild(li);
+
+          let host = "";
+          try {
+            host = new URL(url).hostname.replace(/^www\./, "");
+          } catch {
+            host = url;
+          }
+
+          const chip = document.createElement("a");
+          chip.href = url;
+          chip.className = "quick-answer-source-chip";
+          chip.target = "_blank";
+          chip.rel = "noopener noreferrer";
+          chip.title = title || url;
+          chip.innerHTML = `<span class="quick-answer-chip-index">${refNum}</span><span class="quick-answer-chip-host">${escapeHtml(host)}</span>`;
+          safeRefList.appendChild(chip);
         }
         const escapedTitle = escapeHtml(title || url);
         return `<a href="${url}" class="quick-answer-inline-ref" target="_blank" rel="noopener noreferrer" title="${escapedTitle}">[${refNum}]</a>`;

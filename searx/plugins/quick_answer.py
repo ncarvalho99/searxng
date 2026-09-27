@@ -3,7 +3,7 @@
 import hashlib
 import html
 import json
-import os
+import re
 import typing as t
 from datetime import datetime
 
@@ -17,11 +17,48 @@ if t.TYPE_CHECKING:
     from searx.search import SearchWithPlugins
 
 
+DOMAIN_PATTERN = re.compile(
+    r"^(https?://)?[a-zA-Z0-9-]+(\.[a-zA-Z]{2,})+(/.*)?$", re.IGNORECASE
+)
+
+
 def _get_res_field(item: t.Any, field: str, default: str = "") -> str:
     """Helper to safely retrieve attributes from MainResult or dict."""
     if isinstance(item, dict):
         return str(item.get(field, default) or default)
     return str(getattr(item, field, default) or default)
+
+
+def is_overview_eligible(query_str: str, trigger_mode: str = "auto") -> bool:
+    """Determine whether a search query should trigger an AI Overview (like Google Gemini)."""
+    q = query_str.strip()
+    if len(q) < 2:
+        return False
+
+    # Skip command prefixes and engine shortcuts (!w, @google, etc.)
+    if q.startswith("!") or q.startswith("@"):
+        return False
+
+    # Skip direct domain/URL lookups
+    if DOMAIN_PATTERN.match(q):
+        return False
+
+    if trigger_mode == "always":
+        return True
+
+    if trigger_mode == "question_only":
+        return q.endswith("?")
+
+    # "auto" mode (Google AI Overview style):
+    # Triggers on explicit questions with '?' as well as general conceptual searches
+    if q.endswith("?"):
+        return True
+
+    words = q.split()
+    if len(words) >= 1 and not q.isdigit() and len(q) >= 3:
+        return True
+
+    return False
 
 
 class SXNGPlugin(Plugin):
@@ -35,9 +72,9 @@ class SXNGPlugin(Plugin):
             id=self.id,
             name=gettext("Quick Answer"),
             description=gettext(
-                "Respostas diretas geradas por IA sintetizando os resultados da busca ao terminar consultas com '?'"
+                "Sínteses diretas geradas por IA estilo Google AI Overview com citações e suporte multi-provedor"
             ),
-            examples=["O que é Proxmox?", "Como funciona a fotossíntese?"],
+            examples=["O que é Proxmox?", "Docker vs Podman", "Configurar VLAN pfSense"],
             preference_section="general",
         )
 
@@ -45,27 +82,22 @@ class SXNGPlugin(Plugin):
         now = datetime.now()
         return f"""The current date is {now:%Y-%m-%d}.
 
-You are an expert search assistant providing accurate, direct, well-formatted answers based on search results.
+You are the AI Overview engine for SearXNG, delivering clear, authoritative, search-augmented summaries in the style of Google AI Overviews powered by Gemini.
 
-You ALWAYS follow these guidelines:
-- Use markdown formatting to enhance clarity and readability.
-- If you need to include mathematical expressions, use LaTeX format.
-- Delimit inline mathematical expressions with '$', for example: $y = mx + b$.
-- Delimit block mathematical expressions with '$$', for example: $$F = ma$$.
-- Format code and commands as markdown code blocks with the language tag.
-- DO NOT repeat or rephrase the query as a header before beginning your response.
-- DO NOT include URLs or raw links directly in your response text.
-- Enclose currency and price values in '**', for example: **$5.99**.
+STYLE & STRUCTURE:
+- Direct Answer: Start immediately with a clear, concise overview answering the query directly. Do NOT repeat or rephrase the query.
+- Key Points: Use bullet points with bold lead-ins for key aspects, features, differences, or steps (e.g. "- **Key Feature:** Explanation...").
+- Language: Always reply in the same language as the user's query (e.g. Portuguese for Portuguese queries).
+- Markdown & Math: Use clean markdown. For mathematical expressions, delimit inline math with '$' and display blocks with '$$'.
+- Code: Format programming commands or code in markdown code blocks with the language tag.
+- Conciseness: Keep the overview focused, informative, and to the point (typically 2 to 4 structured paragraphs or bullet lists).
 
-CITATION GUIDELINES:
-1. Use the provided search results (<available_information>) to inform your answer.
-2. Provide inline citations by placing the citation index delimited by 【 and 】 at the end of the sentence or claim, example: "This is a statement【1】."
-3. When citing multiple sources for one statement, use separate delimiters, example: "This is supported by multiple sources【1】【2】."
-4. Use citations relevant to the query; do not create long chains of citations.
-5. DO NOT create an aggregate bibliography or list of links at the end of the response; the interface renders this automatically based on citation indices.
-6. DO NOT put citations inside or around code blocks.
-7. Always format citations in plaintext 【n】, never in markdown link syntax.
-8. Be concise, objective, and synthesize the information in your own words.
+GROUNDING & CITATIONS:
+- Base your summary strictly on the search results provided in <available_information>.
+- Insert inline citations in plaintext using 【0】, 【1】, 【2】 referring to citation indices at the end of claims. Example: "Proxmox is based on Debian【1】."
+- When multiple sources support a claim, use separate markers: "【1】【2】".
+- DO NOT list source URLs or an aggregate references list at the end; the interface renders interactive source chips automatically.
+- DO NOT place citations inside code blocks.
 """
 
     def format_sources(self, sources: list[t.Any]) -> str:
@@ -89,7 +121,7 @@ CITATION GUIDELINES:
     def post_search(self, request: "SXNG_Request", search: "SearchWithPlugins") -> None:
         query = search.search_query
         raw_query = query.query.strip()
-        if query.pageno > 1 or not raw_query.endswith("?"):
+        if query.pageno > 1:
             return
 
         # Check user preference
@@ -98,6 +130,13 @@ CITATION GUIDELINES:
 
         qa_cfg = get_setting("quick_answer") or {}
         if not qa_cfg.get("active", True):
+            return
+
+        trigger_mode = (
+            request.preferences.get_value("quick_answer_trigger_mode")
+            or qa_cfg.get("trigger_mode", "auto")
+        )
+        if not is_overview_eligible(raw_query, trigger_mode):
             return
 
         # Resolve selected provider
@@ -123,13 +162,11 @@ CITATION GUIDELINES:
             selected_provider_id = default_provider
             provider_info = providers_cfg.get(default_provider, {})
 
-        provider_name = provider_info.get("name", selected_provider_id)
-
         # Resolve model
         selected_model = (
             request.preferences.get_value("quick_answer_model")
             or provider_info.get("default_model")
-            or qa_cfg.get("default_model", "auto/best-chat")
+            or qa_cfg.get("default_model", "demigod-flash")
         )
 
         # Take top 6 results for optimal balance of relevance, speed, and token size
@@ -152,33 +189,49 @@ CITATION GUIDELINES:
 
         search.result_container.infoboxes.append(
             {
-                "infobox": gettext("Quick Answer"),
+                "infobox": gettext("AI Overview"),
                 "id": "quick_answer",
                 "content": f"""
-            <div class="quick-answer-card" id="quick-answer-card" data-status="pending">
+            <div class="quick-answer-card google-overview-card" id="quick-answer-card" data-status="pending">
               <div class="quick-answer-header">
                 <div class="quick-answer-title-group">
-                  <span class="quick-answer-badge">AI</span>
-                  <span class="quick-answer-provider-tag" title="Provedor">{html.escape(provider_name)}</span>
+                  <span class="quick-answer-sparkle-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                      <path d="M12 2L14.4 8.6L21 11L14.4 13.4L12 20L9.6 13.4L3 11L9.6 8.6L12 2Z"/>
+                    </svg>
+                  </span>
+                  <span class="quick-answer-title-label">AI Overview</span>
                   <span class="quick-answer-model-tag" title="Modelo">{html.escape(selected_model)}</span>
                 </div>
                 <div class="quick-answer-actions">
                   <button type="button" class="quick-answer-copy-btn" id="quick-answer-copy-btn" title="Copiar resposta" style="display:none;">
-                    <span class="quick-answer-copy-icon"></span>
+                    <svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" fill="none" stroke-width="2">
+                      <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                    </svg>
                     <span class="quick-answer-copy-label">Copiar</span>
                   </button>
                 </div>
               </div>
               <div class="quick-answer-body markdown-content" id="quick-answer-body">
                 <div class="quick-answer-loading" id="quick-answer-loading">
-                  <span class="quick-answer-spinner"></span>
-                  <span class="quick-answer-loading-text">Consultando IA e sintetizando fontes...</span>
+                  <div class="quick-answer-shimmer-wave">
+                    <span class="quick-answer-shimmer-bar bar-1"></span>
+                    <span class="quick-answer-shimmer-bar bar-2"></span>
+                    <span class="quick-answer-shimmer-bar bar-3"></span>
+                  </div>
+                  <span class="quick-answer-loading-text">Gerando visão geral com IA...</span>
                 </div>
                 <div class="quick-answer-text" id="quick-answer-text"></div>
               </div>
               <div class="quick-answer-references" id="quick-answer-references" style="display:none;">
-                <h4 class="quick-answer-references-title">Fontes consultadas</h4>
-                <ol class="quick-answer-references-list" id="quick-answer-references-list"></ol>
+                <div class="quick-answer-references-header">
+                  <span class="quick-answer-references-title">Fontes</span>
+                </div>
+                <div class="quick-answer-sources-chips" id="quick-answer-references-list"></div>
+              </div>
+              <div class="quick-answer-footer-disclaimer">
+                A IA generativa é experimental. As informações podem variar.
               </div>
             </div>
             <script>

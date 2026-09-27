@@ -1,10 +1,10 @@
 {%- set qa_cfg = get_setting('quick_answer') or {} -%}
 {%- if qa_cfg.get('active', true) and (not qa_cfg.get('hide_from_normal_users', false) or preferences.is_quick_answer_admin()) -%}
 
-<div class="pref-group">{{- _('Quick Answer (Respostas com IA)') -}}</div>
+<div class="pref-group">{{- _('AI Overview / Quick Answer (Síntese por IA)') -}}</div>
 
 <fieldset>
-  <legend id="pref_quick_answer_enable">{{- _('Ativar Quick Answer') -}}</legend>
+  <legend id="pref_quick_answer_enable">{{- _('Ativar AI Overview') -}}</legend>
   <p class="value">
     <input type="checkbox"
            name="quick_answer_enable"
@@ -15,7 +15,28 @@
            {%- endif -%}>
   </p>
   <div class="description">
-    {{- _("Gera sínteses diretas por IA baseadas nos resultados ao terminar a pesquisa com '?' (ex: 'O que é Proxmox?')") -}}
+    {{- _("Gera sínteses diretas por IA estilo Google AI Overview com citações a partir dos resultados da busca.") -}}
+  </div>
+</fieldset>
+
+<fieldset>
+  <legend id="pref_quick_answer_trigger_mode">{{- _('Modo de Disparo') -}}</legend>
+  <div class="value">
+    <select name="quick_answer_trigger_mode" id="quick_answer_trigger_mode" aria-labelledby="pref_quick_answer_trigger_mode">
+      {%- set current_trigger = preferences.get_value('quick_answer_trigger_mode') or qa_cfg.get('trigger_mode', 'auto') -%}
+      <option value="auto" {%- if current_trigger == 'auto' %} selected{% endif -%}>
+        {{- _('Automático (Estilo Google AI Overview: em perguntas e buscas conceituais)') -}}
+      </option>
+      <option value="question_only" {%- if current_trigger == 'question_only' %} selected{% endif -%}>
+        {{- _("Apenas com '?' (Exige interrogação no final da consulta)") -}}
+      </option>
+      <option value="always" {%- if current_trigger == 'always' %} selected{% endif -%}>
+        {{- _('Sempre Ativo (Em todas as pesquisas da página 1)') -}}
+      </option>
+    </select>
+  </div>
+  <div class="description">
+    {{- _('Define quando a visão geral por IA deve ser gerada.') -}}
   </div>
 </fieldset>
 

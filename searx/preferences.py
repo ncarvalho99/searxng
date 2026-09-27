@@ -491,6 +491,11 @@ class Preferences:
                 get_setting("quick_answer.active", True),
                 locked="quick_answer_enable" in self.cfg.lock,
             ),
+            'quick_answer_trigger_mode': EnumStringSetting(
+                get_setting("quick_answer.trigger_mode", "auto"),
+                choices=["auto", "question_only", "always"],
+                locked="quick_answer_trigger_mode" in self.cfg.lock,
+            ),
             'quick_answer_provider': StringSetting(
                 get_setting("quick_answer.default_provider", "omniroute_local"),
                 locked="quick_answer_provider" in self.cfg.lock,

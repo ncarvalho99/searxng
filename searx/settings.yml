@@ -3510,6 +3510,7 @@ default_doi_resolver: 'oadoi.org'
 # Supports multi-provider AI (OmniRoute Local, OmniRoute Externo, OpenRouter, and custom OpenAI-compatible endpoints)
 quick_answer:
   active: true
+  trigger_mode: "auto"  # "auto" (Google AI Overview style), "question_only" (ending with ?), or "always"
   admin_token: ""  # When set, managing providers and keys requires this token
   hide_from_normal_users: false  # If true, normal users do not see the Quick Answer preferences group
   default_provider: "omniroute_local"
