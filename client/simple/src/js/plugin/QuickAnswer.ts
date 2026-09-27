@@ -43,6 +43,35 @@ export default class QuickAnswer extends Plugin {
     const safeRefList = refListEl;
     const safeTextEl = textEl;
 
+    // Initialize sources chips from referenceMap so sources are always visible
+    const sourceKeys = Object.keys(safeConfig.referenceMap);
+    if (sourceKeys.length > 0) {
+      refContainerEl.style.display = "block";
+      safeRefList.innerHTML = "";
+      for (const key of sourceKeys) {
+        const source = safeConfig.referenceMap[key];
+        if (!source) continue;
+        const [url, title] = source;
+        const displayIndex = Number(key) + 1;
+
+        let host = "";
+        try {
+          host = new URL(url).hostname.replace(/^www\./, "");
+        } catch {
+          host = url;
+        }
+
+        const chip = document.createElement("a");
+        chip.href = url;
+        chip.className = "quick-answer-source-chip";
+        chip.target = "_blank";
+        chip.rel = "noopener noreferrer";
+        chip.title = title || url;
+        chip.innerHTML = `<span class="quick-answer-chip-index">${displayIndex}</span><span class="quick-answer-chip-host">${escapeHtml(host)}</span>`;
+        safeRefList.appendChild(chip);
+      }
+    }
+
     // Configure marked
     marked.setOptions({
       gfm: true,
@@ -97,9 +126,6 @@ export default class QuickAnswer extends Plugin {
 
     marked.use({ extensions: [mathExtension, inlineMathExtension] });
 
-    let referenceCounter = 1;
-    const referenceIndices: Record<string, number> = {};
-
     function escapeHtml(unsafe: string): string {
       return unsafe.replace(/[&<>"']/g, (m) => {
         switch (m) {
@@ -120,33 +146,28 @@ export default class QuickAnswer extends Plugin {
     }
 
     function replaceCitations(text: string): string {
-      return text.replace(/【(\d+)】/g, (_match, citationIndex) => {
-        const source = safeConfig.referenceMap[citationIndex];
-        if (!source) return "";
-        const [url, title] = source;
-        let refNum = referenceIndices[citationIndex];
-        if (!refNum) {
-          refNum = referenceCounter++;
-          referenceIndices[citationIndex] = refNum;
+      return text.replace(/[【\[]([\d\s,;]+)[】\]]/g, (match, inner) => {
+        const nums = inner.match(/\d+/g);
+        if (!nums || nums.length === 0) return match;
 
-          let host = "";
-          try {
-            host = new URL(url).hostname.replace(/^www\./, "");
-          } catch {
-            host = url;
+        const links: string[] = [];
+        for (const numStr of nums) {
+          const num = Number(numStr);
+          // Look up 1-based index (e.g. 1 -> key "0") or 0-based index
+          let source = safeConfig.referenceMap[String(num - 1)];
+          let displayNum = num;
+          if (!source) {
+            source = safeConfig.referenceMap[numStr];
+            displayNum = num + 1;
           }
-
-          const chip = document.createElement("a");
-          chip.href = url;
-          chip.className = "quick-answer-source-chip";
-          chip.target = "_blank";
-          chip.rel = "noopener noreferrer";
-          chip.title = title || url;
-          chip.innerHTML = `<span class="quick-answer-chip-index">${refNum}</span><span class="quick-answer-chip-host">${escapeHtml(host)}</span>`;
-          safeRefList.appendChild(chip);
+          if (!source) continue;
+          const [url, title] = source;
+          const escapedTitle = escapeHtml(title || url);
+          links.push(
+            `<a href="${url}" class="quick-answer-inline-ref" target="_blank" rel="noopener noreferrer" title="${escapedTitle}">[${displayNum}]</a>`
+          );
         }
-        const escapedTitle = escapeHtml(title || url);
-        return `<a href="${url}" class="quick-answer-inline-ref" target="_blank" rel="noopener noreferrer" title="${escapedTitle}">[${refNum}]</a>`;
+        return links.length > 0 ? links.join(" ") : match;
       });
     }
 
@@ -215,7 +236,7 @@ export default class QuickAnswer extends Plugin {
 
       cardEl.setAttribute("data-status", "ready");
 
-      if (Object.keys(referenceIndices).length > 0) {
+      if (sourceKeys.length > 0) {
         refContainerEl.style.display = "block";
       }
 
