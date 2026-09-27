@@ -3513,19 +3513,19 @@ quick_answer:
   admin_token: ""  # When set, managing providers and keys requires this token
   hide_from_normal_users: false  # If true, normal users do not see the Quick Answer preferences group
   default_provider: "omniroute_local"
-  default_model: "auto/best-chat"
+  default_model: "demigod-flash"
   providers:
     omniroute_local:
       name: "OmniRoute (Local)"
       endpoint: "http://172.26.128.27:20128/v1/chat/completions"
       api_key: ""
-      default_model: "auto/best-chat"
+      default_model: "demigod-flash"
       description: "Gateway OmniRoute interno no homelab (CT 128)"
     omniroute_external:
       name: "OmniRoute (Externo)"
       endpoint: "https://omniroute.nclabs.dev/v1/chat/completions"
       api_key: ""
-      default_model: "auto/best-chat"
+      default_model: "demigod-flash"
       description: "Gateway OmniRoute externo (https://omniroute.nclabs.dev)"
     openrouter:
       name: "OpenRouter"
