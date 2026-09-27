@@ -121,6 +121,11 @@ CORE BEHAVIOR & GUIDELINES:
         if query.pageno > 1:
             return
 
+        # Restrict AI Overview exclusively to the 'general' search tab (skip images, videos, news, files, etc.)
+        categories = getattr(query, "categories", [])
+        if categories and "general" not in categories:
+            return
+
         # Check user preference
         if not request.preferences.get_value("quick_answer_enable"):
             return
