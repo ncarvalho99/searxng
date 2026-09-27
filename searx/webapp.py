@@ -1388,6 +1388,7 @@ def quick_answer():
             {"role": "system", "content": system},
             {"role": "user", "content": user},
         ],
+        "max_tokens": data.get("max_tokens", 800),
         "stream": True,
     }
 
@@ -1447,7 +1448,11 @@ def quick_answer():
                 except Exception:
                     pass
 
-    return Response(stream_response(), mimetype="text/html; charset=utf-8")
+    response = Response(stream_response(), mimetype="text/event-stream; charset=utf-8")
+    response.headers["Cache-Control"] = "no-cache, no-transform"
+    response.headers["X-Accel-Buffering"] = "no"
+    response.headers["Connection"] = "keep-alive"
+    return response
 
 
 @app.route("/quick_answer/providers", methods=["GET"])

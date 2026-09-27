@@ -74,6 +74,8 @@ CITATION GUIDELINES:
             url = _get_res_field(source, "url")
             title = _get_res_field(source, "title")
             content = _get_res_field(source, "content")
+            if len(content) > 450:
+                content = content[:450] + "..."
             ret.append("<datum>")
             ret.append(f'<citation index="{pos}">')
             ret.append(f"<source>\n{url}\n</source>")
@@ -130,7 +132,8 @@ CITATION GUIDELINES:
             or qa_cfg.get("default_model", "auto/best-chat")
         )
 
-        sources = search.result_container.get_ordered_results()
+        # Take top 6 results for optimal balance of relevance, speed, and token size
+        sources = search.result_container.get_ordered_results()[:6]
         if not sources:
             return
 
@@ -171,6 +174,7 @@ CITATION GUIDELINES:
                   <span class="quick-answer-spinner"></span>
                   <span class="quick-answer-loading-text">Consultando IA e sintetizando fontes...</span>
                 </div>
+                <div class="quick-answer-text" id="quick-answer-text"></div>
               </div>
               <div class="quick-answer-references" id="quick-answer-references" style="display:none;">
                 <h4 class="quick-answer-references-title">Fontes consultadas</h4>

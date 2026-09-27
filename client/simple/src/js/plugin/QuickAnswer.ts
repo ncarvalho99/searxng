@@ -28,18 +28,20 @@ export default class QuickAnswer extends Plugin {
   protected async run(): Promise<unknown> {
     const cardEl = document.getElementById("quick-answer-card");
     const bodyEl = document.getElementById("quick-answer-body");
+    const textEl = document.getElementById("quick-answer-text") || bodyEl;
     const loadingEl = document.getElementById("quick-answer-loading");
     const refContainerEl = document.getElementById("quick-answer-references");
     const refListEl = document.getElementById("quick-answer-references-list");
     const copyBtnEl = document.getElementById("quick-answer-copy-btn");
 
     const config = window.quickAnswerConfig;
-    if (!cardEl || !bodyEl || !loadingEl || !refContainerEl || !refListEl || !config) {
+    if (!cardEl || !bodyEl || !loadingEl || !refContainerEl || !refListEl || !config || !textEl) {
       return false;
     }
 
     const safeConfig = config;
     const safeRefList = refListEl;
+    const safeTextEl = textEl;
 
     // Configure marked
     marked.setOptions({
@@ -180,9 +182,9 @@ export default class QuickAnswer extends Plugin {
         }
 
         const processed = replaceCitations(accumulatedText);
-        bodyEl.innerHTML = marked.parse(processed) as string;
+        safeTextEl.innerHTML = marked.parse(processed) as string;
 
-        renderMathInElement(bodyEl, {
+        renderMathInElement(safeTextEl, {
           delimiters: [
             { left: "$$", right: "$$", display: true },
             { left: "$", right: "$", display: false }
@@ -193,9 +195,9 @@ export default class QuickAnswer extends Plugin {
 
       // Final render pass
       const finalProcessed = replaceCitations(accumulatedText);
-      bodyEl.innerHTML = marked.parse(finalProcessed) as string;
+      safeTextEl.innerHTML = marked.parse(finalProcessed) as string;
 
-      renderMathInElement(bodyEl, {
+      renderMathInElement(safeTextEl, {
         delimiters: [
           { left: "$$", right: "$$", display: true },
           { left: "$", right: "$", display: false }
@@ -212,7 +214,7 @@ export default class QuickAnswer extends Plugin {
       if (copyBtnEl && accumulatedText.trim().length > 0) {
         copyBtnEl.style.display = "inline-flex";
         copyBtnEl.addEventListener("click", () => {
-          void navigator.clipboard.writeText(bodyEl.innerText).then(() => {
+          void navigator.clipboard.writeText(safeTextEl.innerText).then(() => {
             const copyLabel = copyBtnEl.querySelector(".quick-answer-copy-label");
             if (copyLabel) {
               const originalText = copyLabel.textContent;
@@ -228,7 +230,7 @@ export default class QuickAnswer extends Plugin {
       console.error("QuickAnswer error:", err);
       loadingEl.style.display = "none";
       const message = err instanceof Error ? err.message : String(err);
-      bodyEl.innerHTML = `<p class="quick-answer-error" style="color: #ef4444;">⚠️ Erro ao consultar IA: ${escapeHtml(message)}</p>`;
+      safeTextEl.innerHTML = `<p class="quick-answer-error" style="color: #ef4444;">⚠️ Erro ao consultar IA: ${escapeHtml(message)}</p>`;
     }
 
     return true;
